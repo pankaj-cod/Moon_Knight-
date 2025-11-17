@@ -1,0 +1,36 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  createdAt DateTime @default(now())
+  edits     Edit[]
+}
+
+model Edit {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  imageData   String   // removed @db.Text
+  presetName  String   @default("Custom")
+  brightness  Int      @default(100)
+  contrast    Int      @default(100)
+  saturate    Int      @default(100)
+  blur        Int      @default(0)
+  hue         Int      @default(0)
+  temperature Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
