@@ -35,7 +35,8 @@ function App() {
   const imgRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const API_URL = import.meta.env.VITE_APP_API_URL || "http://localhost:5000/api";
+  const API_URL =
+    import.meta.env.VITE_APP_API_URL || "http://localhost:5000/api";
 
   // Stock Moon Photos (using Unsplash)
   const stockPhotos = [
@@ -162,9 +163,7 @@ function App() {
     try {
       const endpoint = authMode === "login" ? "login" : "signup";
       const body =
-        authMode === "login"
-          ? { email, password }
-          : { email, password, name };
+        authMode === "login" ? { email, password } : { email, password, name };
 
       const response = await fetch(`${API_URL}/auth/${endpoint}`, {
         method: "POST",
@@ -339,12 +338,62 @@ function App() {
     setTemperature(0);
   };
 
-  const getFilterStyle = () => {
+  // CSS filter for on-screen preview
+  const getCssFilter = () => {
     const tempEffect =
       temperature > 0
         ? `sepia(${temperature / 100})`
         : `hue-rotate(${temperature * 2}deg)`;
     return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) blur(${blur}px) hue-rotate(${hue}deg) ${tempEffect}`;
+  };
+
+  // Canvas-friendly filter (uses unitless numbers where possible)
+  const getCanvasFilter = () => {
+    const tempEffect =
+      temperature > 0
+        ? `sepia(${temperature / 100})`
+        : `hue-rotate(${temperature * 2}deg)`;
+    const b = brightness / 100; // 0.5–2
+    const c = contrast / 100; // 0.5–2
+    const s = saturate / 100; // 0–2
+    return `brightness(${b}) contrast(${c}) saturate(${s}) blur(${blur}px) hue-rotate(${hue}deg) ${tempEffect}`;
+  };
+
+  // Download edited image (applies canvas filter)
+  const handleDownload = () => {
+    if (!image) return;
+
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+
+      ctx.filter = getCanvasFilter();
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            alert("Failed to create image blob");
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "lunar-edit.png";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        },
+        "image/png",
+        1.0
+      );
+    };
+
+    img.src = image;
   };
 
   const Slider = ({ label, value, onChange, min, max, icon }) => (
@@ -755,7 +804,7 @@ function App() {
                     alt="moon"
                     className="w-full h-auto"
                     style={{
-                      filter: getFilterStyle(),
+                      filter: getCssFilter(),
                       display: showBefore ? "none" : "block",
                     }}
                   />
@@ -822,7 +871,8 @@ function App() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-3 gap-4">
+                {/* Controls row with DOWNLOAD */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {isAuthenticated && (
                     <button
                       onClick={handleSaveEdit}
@@ -832,11 +882,18 @@ function App() {
                       SAVE
                     </button>
                   )}
+
+                  <button
+                    onClick={handleDownload}
+                    className="bg-blue-900/30 border-2 border-blue-800/60 text-blue-100 py-3"
+                    style={{ fontFamily: "Cinzel, serif" }}
+                  >
+                    DOWNLOAD
+                  </button>
+
                   <button
                     onClick={() =>
-                      setCurrentView(
-                        isAuthenticated ? "dashboard" : "home"
-                      )
+                      setCurrentView(isAuthenticated ? "dashboard" : "home")
                     }
                     className="bg-amber-900/30 border-2 border-amber-800/60 text-amber-100 py-3"
                     style={{ fontFamily: "Cinzel, serif" }}
