@@ -5,7 +5,7 @@ import StockPhotosModal from "./components/StockPhotosModal";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Editor from "./pages/Editor";
-import StarryBackground from "./components/StarryBackground";
+import Galaxy from "./components/Galaxy";
 
 function App() {
   // Auth & Navigation
@@ -416,7 +416,7 @@ function App() {
   return (
     <>
       <div className="min-h-screen text-slate-100 relative font-sans">
-        <StarryBackground />
+        <Galaxy className="fixed inset-0 -z-10 w-full h-full bg-black" />
         <Header
           isAuthenticated={isAuthenticated}
           user={user}
