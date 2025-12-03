@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ['nodejs-18_x']
+
+[phases.install]
+cmds = ['cd moon_backend && npm ci']
+
+[phases.build]
+cmds = ['cd moon_backend && npx prisma generate']
+
+[start]
+cmd = 'cd moon_backend && npx prisma migrate deploy && node server.js'
