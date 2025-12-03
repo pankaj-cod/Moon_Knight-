@@ -13,4 +13,17 @@ The React Compiler is not enabled on this template because of its impact on dev 
 
 ## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+## Hosted URL
+**Frontend**: [Link to Hosted Frontend](https://moonlight-frontend.vercel.app) (Replace with actual URL)
+**Backend**: [Link to Hosted Backend](https://moonlight-backend.railway.app) (Replace with actual URL)
+
+## Project Proposal
+**Problem Statement**: Users need a simple, intuitive web application to edit photos and organize them into albums. Existing tools are either too complex or lack organizational features.
+**Solution**: Moonlight is a web-based photo editor that allows users to upload, edit (adjust brightness, contrast, etc.), and save photos. It also provides an "Albums" feature to organize these edits.
+**Features**:
+- User Authentication (Signup/Login)
+- Photo Editor (Brightness, Contrast, Saturation, etc.)
+- Save Edits to Cloud
+- Organize Edits into Albums
+- Advanced Search and Filtering for Edits and Albums

@@ -1,5 +1,5 @@
 
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import Slider from "../components/Slider";
@@ -31,8 +31,10 @@ const Editor = ({
     blur,
     setBlur,
     getCssFilter,
+    albums = [],
 }) => {
     const container = useRef();
+    const [selectedAlbum, setSelectedAlbum] = useState("");
 
     useGSAP(
         () => {
@@ -78,12 +80,28 @@ const Editor = ({
                 {/* Controls row with DOWNLOAD */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {isAuthenticated && (
-                        <button
-                            onClick={handleSaveEdit}
-                            className="bg-green-950/30 border-2 border-green-900/40 text-green-200 py-3 font-display"
-                        >
-                            SAVE
-                        </button>
+                        <>
+                            <div className="col-span-2 md:col-span-4 flex gap-2">
+                                <select
+                                    value={selectedAlbum}
+                                    onChange={(e) => setSelectedAlbum(e.target.value)}
+                                    className="flex-1 bg-slate-950 border border-cyan-800/40 text-cyan-50 px-4 py-2 text-xs font-sans focus:outline-none"
+                                >
+                                    <option value="">Select Album (Optional)</option>
+                                    {albums.map((album) => (
+                                        <option key={album.id} value={album.id}>
+                                            {album.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={() => handleSaveEdit(selectedAlbum)}
+                                    className="bg-green-950/30 border-2 border-green-900/40 text-green-200 px-6 py-2 font-display text-xs"
+                                >
+                                    SAVE
+                                </button>
+                            </div>
+                        </>
                     )}
 
                     <button

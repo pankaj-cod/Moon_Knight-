@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import Header from "./components/Header";
 import AuthModal from "./components/AuthModal";
 import StockPhotosModal from "./components/StockPhotosModal";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
+import Albums from "./pages/Albums";
 import Editor from "./pages/Editor";
 import Galaxy from "./components/Galaxy";
 
@@ -35,15 +36,20 @@ function App() {
 
   // Dashboard
   const [savedEdits, setSavedEdits] = useState([]);
+  const [editsPagination, setEditsPagination] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedEdit, setSelectedEdit] = useState(null);
   const [showStockPhotos, setShowStockPhotos] = useState(false);
+
+  // Albums
+  const [albums, setAlbums] = useState([]);
+  const [albumsPagination, setAlbumsPagination] = useState(null);
 
   const imgRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const API_URL =
-    import.meta.env.VITE_APP_API_URL || "http://localhost:5000/api";
+    import.meta.env.VITE_APP_API_URL || "http://localhost:5001/api";
 
   // Stock Moon Photos (using Unsplash)
   const stockPhotos = [
@@ -135,7 +141,7 @@ function App() {
         const data = await response.json();
         setUser(data);
         setIsAuthenticated(true);
-        fetchSavedEdits(token);
+        fetchSavedEdits();
       } else {
         localStorage.removeItem("token");
       }
@@ -144,22 +150,116 @@ function App() {
     }
   };
 
-  const fetchSavedEdits = async (token) => {
+  const fetchSavedEdits = useCallback(async (params = {}) => {
     setLoading(true);
+    console.log("Fetching edits with params:", params);
     try {
-      const response = await fetch(`${API_URL}/edits`, {
+      const token = localStorage.getItem("token");
+      const query = new URLSearchParams(params).toString();
+      const response = await fetch(`${API_URL}/edits?${query}`, {
         headers: {
-          Authorization: `Bearer ${token || localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
       });
       if (response.ok) {
         const data = await response.json();
+        console.log("Fetched edits:", data);
         setSavedEdits(data.edits);
+        setEditsPagination(data.pagination);
+      } else {
+        console.error("Failed response:", response.status);
       }
     } catch (error) {
       console.error("Failed to fetch edits:", error);
     } finally {
       setLoading(false);
+    }
+  }, [API_URL]);
+
+  const fetchAlbums = useCallback(async (params = {}) => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const query = new URLSearchParams(params).toString();
+      const response = await fetch(`${API_URL}/albums?${query}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAlbums(data.albums);
+        setAlbumsPagination(data.pagination);
+      }
+    } catch (error) {
+      console.error("Failed to fetch albums:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [API_URL]);
+
+  const handleCreateAlbum = async (albumData) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_URL}/albums`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(albumData),
+      });
+      if (response.ok) {
+        alert("Album created!");
+        fetchAlbums();
+      } else {
+        alert("Failed to create album");
+      }
+    } catch (error) {
+      console.error("Create album error:", error);
+    }
+  };
+
+  const handleUpdateAlbum = async (id, albumData) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_URL}/albums/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(albumData),
+      });
+      if (response.ok) {
+        alert("Album updated!");
+        fetchAlbums();
+      } else {
+        alert("Failed to update album");
+      }
+    } catch (error) {
+      console.error("Update album error:", error);
+    }
+  };
+
+  const handleDeleteAlbum = async (id) => {
+    if (!confirm("Delete this album?")) return;
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_URL}/albums/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        alert("Album deleted!");
+        fetchAlbums();
+      } else {
+        alert("Failed to delete album");
+      }
+    } catch (error) {
+      console.error("Delete album error:", error);
     }
   };
 
@@ -189,7 +289,7 @@ function App() {
         setEmail("");
         setPassword("");
         setName("");
-        fetchSavedEdits(data.token);
+        fetchSavedEdits();
         setCurrentView("dashboard");
       } else {
         setAuthError(data.error || "Authentication failed");
@@ -249,7 +349,7 @@ function App() {
     }
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async (albumId = null) => {
     if (!image) return;
 
     const token = localStorage.getItem("token");
@@ -276,12 +376,13 @@ function App() {
             temperature,
           },
           presetName: "Custom Edit",
+          albumId
         }),
       });
 
       if (response.ok) {
         alert("✅ Edit saved successfully!");
-        fetchSavedEdits(token);
+        fetchSavedEdits();
       } else {
         alert("Failed to save edit");
       }
@@ -468,6 +569,21 @@ function App() {
               loading={loading}
               handleDeleteEdit={handleDeleteEdit}
               handleUpload={handleUpload}
+              fetchEdits={fetchSavedEdits}
+              pagination={editsPagination}
+            />
+
+          )}
+
+          {currentView === "albums" && isAuthenticated && (
+            <Albums
+              albums={albums}
+              loading={loading}
+              fetchAlbums={fetchAlbums}
+              handleCreateAlbum={handleCreateAlbum}
+              handleUpdateAlbum={handleUpdateAlbum}
+              handleDeleteAlbum={handleDeleteAlbum}
+              pagination={albumsPagination}
             />
           )}
 
@@ -498,6 +614,7 @@ function App() {
               blur={blur}
               setBlur={setBlur}
               getCssFilter={getCssFilter}
+              albums={albums}
             />
           )}
         </div>
