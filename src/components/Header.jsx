@@ -49,6 +49,15 @@ const Header = ({
                             >
                                 DASHBOARD
                             </button>
+                            <button
+                                onClick={() => setCurrentView("albums")}
+                                className={`px-4 py-2 border border-cyan-800/40 text-xs tracking-widest transition font-display ${currentView === "albums"
+                                    ? "bg-cyan-900/40 text-cyan-50"
+                                    : "bg-slate-800/20 hover:bg-slate-800/40 text-slate-300"
+                                    }`}
+                            >
+                                ALBUMS
+                            </button>
                             <span className="text-sm text-slate-400 font-sans">
                                 Hi, {user?.name}
                             </span>

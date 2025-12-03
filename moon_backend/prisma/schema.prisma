@@ -18,6 +18,7 @@ model User {
   password  String
   createdAt DateTime @default(now())
   edits     Edit[]
+  albums    Album[]
 }
 
 model Edit {
@@ -32,7 +33,23 @@ model Edit {
   blur        Int      @default(0)
   hue         Int      @default(0)
   temperature Int      @default(0)
+  albumId     String?
+  album       Album?   @relation(fields: [albumId], references: [id])
   createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([albumId])
+}
+
+model Album {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  edits       Edit[]
 
   @@index([userId])
 }

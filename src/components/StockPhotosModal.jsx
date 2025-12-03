@@ -46,7 +46,7 @@ const StockPhotosModal = ({
     return (
         <div
             ref={container}
-            className="backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 backdrop-blur-sm p-4"
+            className="backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/95 backdrop-blur-sm p-4"
         >
             <div className="modal-content bg-slate-900 border-2 border-cyan-800/40 p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-6">

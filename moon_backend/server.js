@@ -176,16 +176,17 @@ app.post('/api/edits/save', authenticateToken, async (req, res) => {
         saturate: settings?.saturate || 100,
         blur: settings?.blur || 0,
         hue: settings?.hue || 0,
-        temperature: settings?.temperature || 0
+        temperature: settings?.temperature || 0,
+        ...(req.body.albumId && { albumId: req.body.albumId })
       }
     });
 
     res.status(201).json({
       message: 'Edit saved successfully',
-      edit: { 
-        id: newEdit.id, 
-        presetName: newEdit.presetName, 
-        createdAt: newEdit.createdAt 
+      edit: {
+        id: newEdit.id,
+        presetName: newEdit.presetName,
+        createdAt: newEdit.createdAt
       }
     });
 
@@ -195,27 +196,47 @@ app.post('/api/edits/save', authenticateToken, async (req, res) => {
   }
 });
 
-// GET USER'S EDITS
+// GET USER'S EDITS (with Pagination, Search, Sort, Filter)
 app.get('/api/edits', authenticateToken, async (req, res) => {
   try {
-    const edits = await prisma.edit.findMany({
-      where: { userId: req.user.id },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        imageData: true,
-        presetName: true,
-        brightness: true,
-        contrast: true,
-        saturate: true,
-        blur: true,
-        hue: true,
-        temperature: true,
-        createdAt: true
-      }
-    });
+    const { page = 1, limit = 10, search, sortBy = 'createdAt', order = 'desc', presetName, albumId } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Format for frontend (match old structure)
+    const where = {
+      userId: req.user.id,
+      ...(search && {
+        OR: [
+          { presetName: { contains: search, mode: 'insensitive' } }
+        ]
+      }),
+      ...(presetName && { presetName: { equals: presetName } }),
+      ...(albumId && { albumId: { equals: albumId } })
+    };
+
+    const [edits, total] = await Promise.all([
+      prisma.edit.findMany({
+        where,
+        skip,
+        take: parseInt(limit),
+        orderBy: { [sortBy]: order },
+        select: {
+          id: true,
+          imageData: true,
+          presetName: true,
+          brightness: true,
+          contrast: true,
+          saturate: true,
+          blur: true,
+          hue: true,
+          temperature: true,
+          createdAt: true,
+          albumId: true
+        }
+      }),
+      prisma.edit.count({ where })
+    ]);
+
+    // Format for frontend
     const formattedEdits = edits.map(edit => ({
       id: edit.id,
       imageData: edit.imageData,
@@ -228,14 +249,67 @@ app.get('/api/edits', authenticateToken, async (req, res) => {
         hue: edit.hue,
         temperature: edit.temperature
       },
-      createdAt: edit.createdAt
+      createdAt: edit.createdAt,
+      albumId: edit.albumId
     }));
 
-    res.json({ edits: formattedEdits, count: edits.length });
+    res.json({
+      edits: formattedEdits,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
 
   } catch (error) {
     console.error('Get edits error:', error);
     res.status(500).json({ error: 'Server error while fetching edits' });
+  }
+});
+
+// UPDATE EDIT
+app.put('/api/edits/:id', authenticateToken, async (req, res) => {
+  try {
+    const { presetName, settings, albumId } = req.body;
+
+    // Check if edit belongs to user
+    const edit = await prisma.edit.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.id
+      }
+    });
+
+    if (!edit) {
+      return res.status(404).json({ error: 'Edit not found or unauthorized' });
+    }
+
+    const updatedEdit = await prisma.edit.update({
+      where: { id: req.params.id },
+      data: {
+        ...(presetName && { presetName }),
+        ...(settings && {
+          brightness: settings.brightness,
+          contrast: settings.contrast,
+          saturate: settings.saturate,
+          blur: settings.blur,
+          hue: settings.hue,
+          temperature: settings.temperature
+        }),
+        ...(albumId !== undefined && { albumId })
+      }
+    });
+
+    res.json({
+      message: 'Edit updated successfully',
+      edit: updatedEdit
+    });
+
+  } catch (error) {
+    console.error('Update edit error:', error);
+    res.status(500).json({ error: 'Server error while updating edit' });
   }
 });
 
@@ -244,9 +318,9 @@ app.delete('/api/edits/:id', authenticateToken, async (req, res) => {
   try {
     // Check if edit belongs to user
     const edit = await prisma.edit.findFirst({
-      where: { 
+      where: {
         id: req.params.id,
-        userId: req.user.id 
+        userId: req.user.id
       }
     });
 
@@ -258,9 +332,9 @@ app.delete('/api/edits/:id', authenticateToken, async (req, res) => {
       where: { id: req.params.id }
     });
 
-    res.json({ 
+    res.json({
       message: 'Edit deleted successfully',
-      deletedId: req.params.id 
+      deletedId: req.params.id
     });
 
   } catch (error) {
@@ -269,17 +343,152 @@ app.delete('/api/edits/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== ALBUM ROUTES ====================
+
+// CREATE ALBUM
+app.post('/api/albums', authenticateToken, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Album name required' });
+    }
+
+    const newAlbum = await prisma.album.create({
+      data: {
+        userId: req.user.id,
+        name,
+        description
+      }
+    });
+
+    res.status(201).json({
+      message: 'Album created successfully',
+      album: newAlbum
+    });
+
+  } catch (error) {
+    console.error('Create album error:', error);
+    res.status(500).json({ error: 'Server error while creating album' });
+  }
+});
+
+// GET ALBUMS (with Pagination, Search, Sort, Filter)
+app.get('/api/albums', authenticateToken, async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search, sortBy = 'createdAt', order = 'desc' } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const where = {
+      userId: req.user.id,
+      ...(search && {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } }
+        ]
+      })
+    };
+
+    const [albums, total] = await Promise.all([
+      prisma.album.findMany({
+        where,
+        skip,
+        take: parseInt(limit),
+        orderBy: { [sortBy]: order },
+        include: {
+          _count: {
+            select: { edits: true }
+          }
+        }
+      }),
+      prisma.album.count({ where })
+    ]);
+
+    res.json({
+      albums,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
+
+  } catch (error) {
+    console.error('Get albums error:', error);
+    res.status(500).json({ error: 'Server error while fetching albums' });
+  }
+});
+
+// UPDATE ALBUM
+app.put('/api/albums/:id', authenticateToken, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+
+    const album = await prisma.album.findFirst({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+
+    if (!album) {
+      return res.status(404).json({ error: 'Album not found or unauthorized' });
+    }
+
+    const updatedAlbum = await prisma.album.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name && { name }),
+        ...(description !== undefined && { description })
+      }
+    });
+
+    res.json({
+      message: 'Album updated successfully',
+      album: updatedAlbum
+    });
+
+  } catch (error) {
+    console.error('Update album error:', error);
+    res.status(500).json({ error: 'Server error while updating album' });
+  }
+});
+
+// DELETE ALBUM
+app.delete('/api/albums/:id', authenticateToken, async (req, res) => {
+  try {
+    const album = await prisma.album.findFirst({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+
+    if (!album) {
+      return res.status(404).json({ error: 'Album not found or unauthorized' });
+    }
+
+    await prisma.album.delete({
+      where: { id: req.params.id }
+    });
+
+    res.json({
+      message: 'Album deleted successfully',
+      deletedId: req.params.id
+    });
+
+  } catch (error) {
+    console.error('Delete album error:', error);
+    res.status(500).json({ error: 'Server error while deleting album' });
+  }
+});
+
 // Health check
 app.get('/api/health', async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ 
+    res.json({
       status: 'Server is running!',
       database: 'Connected',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.json({ 
+    res.json({
       status: 'Server is running!',
       database: 'Disconnected',
       timestamp: new Date().toISOString()
