@@ -142,6 +142,7 @@ function App() {
         setUser(data);
         setIsAuthenticated(true);
         fetchSavedEdits();
+        fetchAlbums(); // Fetch albums when user authenticates
       } else {
         localStorage.removeItem("token");
       }
@@ -201,6 +202,7 @@ function App() {
   const handleCreateAlbum = async (albumData) => {
     try {
       const token = localStorage.getItem("token");
+      console.log("Creating album with data:", albumData);
       const response = await fetch(`${API_URL}/albums`, {
         method: "POST",
         headers: {
@@ -209,14 +211,18 @@ function App() {
         },
         body: JSON.stringify(albumData),
       });
+      const data = await response.json();
+      console.log("Album creation response:", data);
       if (response.ok) {
         alert("Album created!");
         fetchAlbums();
       } else {
-        alert("Failed to create album");
+        console.error("Album creation failed:", data);
+        alert(`Failed to create album: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error("Create album error:", error);
+      alert(`Error creating album: ${error.message}`);
     }
   };
 
@@ -290,6 +296,7 @@ function App() {
         setPassword("");
         setName("");
         fetchSavedEdits();
+        fetchAlbums(); // Fetch albums on login
         setCurrentView("dashboard");
       } else {
         setAuthError(data.error || "Authentication failed");
@@ -359,35 +366,48 @@ function App() {
     }
 
     try {
+      const payload = {
+        imageData: image,
+        settings: {
+          brightness,
+          contrast,
+          saturate,
+          blur,
+          hue,
+          temperature,
+        },
+        presetName: "Custom Edit",
+      };
+
+      // Only add albumId if it's not empty string
+      if (albumId && albumId !== "") {
+        payload.albumId = albumId;
+      }
+
+      console.log("Saving edit with payload:", payload);
+
       const response = await fetch(`${API_URL}/edits/save`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          imageData: image,
-          settings: {
-            brightness,
-            contrast,
-            saturate,
-            blur,
-            hue,
-            temperature,
-          },
-          presetName: "Custom Edit",
-          albumId
-        }),
+        body: JSON.stringify(payload),
       });
+
+      const data = await response.json();
+      console.log("Save edit response:", data);
 
       if (response.ok) {
         alert("✅ Edit saved successfully!");
         fetchSavedEdits();
       } else {
-        alert("Failed to save edit");
+        console.error("Save edit failed:", data);
+        alert(`Failed to save edit: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
-      alert("Error saving edit");
+      console.error("Save edit error:", error);
+      alert(`Error saving edit: ${error.message}`);
     }
   };
 
