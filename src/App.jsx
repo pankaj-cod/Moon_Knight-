@@ -7,6 +7,8 @@ import Dashboard from "./pages/Dashboard";
 import Albums from "./pages/Albums";
 import Editor from "./pages/Editor";
 import Galaxy from "./components/Galaxy";
+import { ToneCurve } from "./utils/ToneCurve";
+import { useHistory } from "./hooks/useHistory";
 
 function App() {
   // Auth & Navigation
@@ -25,14 +27,47 @@ function App() {
 
   // Editor
   const [image, setImage] = useState(null);
-  const [brightness, setBrightness] = useState(100);
-  const [contrast, setContrast] = useState(100);
-  const [saturate, setSaturate] = useState(100);
-  const [blur, setBlur] = useState(0);
-  const [hue, setHue] = useState(0);
-  const [temperature, setTemperature] = useState(0);
   const [showBefore, setShowBefore] = useState(false);
   const [histogramData, setHistogramData] = useState(null);
+
+  // Unified adjustments state with full undo/redo history
+  const initialAdjustments = {
+    basic: {
+      exposure: 0,
+      contrast: 0,
+      highlights: 0,
+      shadows: 0,
+      whites: 0,
+      blacks: 0
+    },
+    color: {
+      temperature: 0,
+      tint: 0,
+      vibrance: 0,
+      saturation: 0
+    },
+    toneCurve: new ToneCurve(),
+    hsl: {
+      red: { hue: 0, saturation: 0, luminance: 0 },
+      orange: { hue: 0, saturation: 0, luminance: 0 },
+      yellow: { hue: 0, saturation: 0, luminance: 0 },
+      green: { hue: 0, saturation: 0, luminance: 0 },
+      aqua: { hue: 0, saturation: 0, luminance: 0 },
+      blue: { hue: 0, saturation: 0, luminance: 0 },
+      purple: { hue: 0, saturation: 0, luminance: 0 },
+      magenta: { hue: 0, saturation: 0, luminance: 0 }
+    },
+    effects: {
+      clarity: 0,
+      dehaze: 0,
+      vignette: 0,
+      grain: 0
+    },
+    blur: 0
+  };
+  const { adjustments: _adjustments, setAdjustments, undo, redo, canUndo, canRedo, historyLength } = useHistory(initialAdjustments);
+  // Guarantee adjustments is never null/undefined — prevents Editor from crashing mid-undo
+  const adjustments = _adjustments ?? initialAdjustments;
 
   // Dashboard
   const [savedEdits, setSavedEdits] = useState([]);
@@ -51,37 +86,37 @@ function App() {
   const API_URL =
     import.meta.env.VITE_APP_API_URL || "http://localhost:5001/api";
 
-  // Stock Moon Photos (using Unsplash)
+  // Sample Photos (served locally from /public folder)
   const stockPhotos = [
     {
       id: 1,
-      url: "https://images.unsplash.com/photo-1509773896068-7fd415d91e2e?w=800",
+      url: "/moon_full.png",
       title: "Full Moon",
     },
     {
       id: 2,
-      url: "https://images.unsplash.com/photo-1532693322450-2cb5c511067d?w=800",
+      url: "/moon_crescent.png",
       title: "Crescent Moon",
     },
     {
       id: 3,
-      url: "https://images.unsplash.com/photo-1581822261290-991b38693d1b?w=800",
-      title: "Moon Surface",
+      url: "/moon_surface.png",
+      title: "Lunar Surface",
     },
     {
       id: 4,
-      url: "https://images.unsplash.com/photo-1446941611757-91d2c3bd3d45?w=800",
+      url: "/moon_blood.png",
       title: "Blood Moon",
     },
     {
       id: 5,
-      url: "https://images.unsplash.com/photo-1520034475321-cbe63696469a?w=800",
+      url: "/moon_half.png",
       title: "Half Moon",
     },
     {
       id: 6,
-      url: "https://images.unsplash.com/photo-1517699418036-fb5d179fef0c?w=800",
-      title: "Lunar Eclipse",
+      url: "/moon_gibbous.png",
+      title: "Gibbous Moon",
     },
   ];
 
@@ -319,37 +354,45 @@ function App() {
 
   const applyPreset = (preset) => {
     switch (preset) {
-      case "lunar-surface":
-        setBrightness(120);
-        setContrast(140);
-        setSaturate(80);
-        setBlur(0);
-        setHue(0);
-        setTemperature(5);
+      case "vivid":
+        setAdjustments({
+          basic: { exposure: 0.15, contrast: 25, highlights: 10, shadows: 15, whites: 10, blacks: -5 },
+          color: { temperature: 5, tint: 0, vibrance: 35, saturation: 20 },
+          toneCurve: new ToneCurve(),
+          hsl: adjustments.hsl,
+          effects: { clarity: 15, dehaze: 5, vignette: 0, grain: 0 },
+          blur: 0
+        });
         break;
-      case "deep-crater":
-        setBrightness(110);
-        setContrast(160);
-        setSaturate(90);
-        setBlur(0);
-        setHue(-5);
-        setTemperature(-10);
+      case "film":
+        setAdjustments({
+          basic: { exposure: 0.10, contrast: 15, highlights: -20, shadows: 20, whites: -10, blacks: 10 },
+          color: { temperature: 15, tint: 5, vibrance: -10, saturation: -5 },
+          toneCurve: new ToneCurve(),
+          hsl: adjustments.hsl,
+          effects: { clarity: 5, dehaze: 0, vignette: 15, grain: 20 },
+          blur: 0
+        });
         break;
-      case "bright-moon":
-        setBrightness(140);
-        setContrast(110);
-        setSaturate(100);
-        setBlur(0);
-        setHue(10);
-        setTemperature(15);
+      case "portrait":
+        setAdjustments({
+          basic: { exposure: 0.20, contrast: 8, highlights: -15, shadows: 20, whites: 5, blacks: 0 },
+          color: { temperature: 10, tint: 3, vibrance: 15, saturation: 5 },
+          toneCurve: new ToneCurve(),
+          hsl: adjustments.hsl,
+          effects: { clarity: -5, dehaze: 0, vignette: 12, grain: 3 },
+          blur: 0
+        });
         break;
       case "monochrome":
-        setBrightness(115);
-        setContrast(135);
-        setSaturate(0);
-        setBlur(0);
-        setHue(0);
-        setTemperature(0);
+        setAdjustments({
+          basic: { exposure: 0.20, contrast: 35, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
+          color: { temperature: 0, tint: 0, vibrance: 0, saturation: -100 },
+          toneCurve: new ToneCurve(),
+          hsl: adjustments.hsl,
+          effects: { clarity: 30, dehaze: 0, vignette: 15, grain: 5 },
+          blur: 0
+        });
         break;
       default:
         break;
@@ -369,12 +412,8 @@ function App() {
       const payload = {
         imageData: image,
         settings: {
-          brightness,
-          contrast,
-          saturate,
-          blur,
-          hue,
-          temperature,
+          ...adjustments,
+          toneCurve: adjustments.toneCurve.toJSON()
         },
         presetName: "Custom Edit",
       };
@@ -467,71 +506,28 @@ function App() {
   };
 
   const resetAdjustments = () => {
-    setBrightness(100);
-    setContrast(100);
-    setSaturate(100);
-    setBlur(0);
-    setHue(0);
-    setHue(0);
-    setTemperature(0);
+    setAdjustments({
+      basic: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 },
+      color: { temperature: 0, tint: 0, vibrance: 0, saturation: 0 },
+      toneCurve: new ToneCurve(),
+      hsl: {
+        red: { hue: 0, saturation: 0, luminance: 0 },
+        orange: { hue: 0, saturation: 0, luminance: 0 },
+        yellow: { hue: 0, saturation: 0, luminance: 0 },
+        green: { hue: 0, saturation: 0, luminance: 0 },
+        aqua: { hue: 0, saturation: 0, luminance: 0 },
+        blue: { hue: 0, saturation: 0, luminance: 0 },
+        purple: { hue: 0, saturation: 0, luminance: 0 },
+        magenta: { hue: 0, saturation: 0, luminance: 0 }
+      },
+      effects: { clarity: 0, dehaze: 0, vignette: 0, grain: 0 },
+      blur: 0
+    });
   };
 
-  // CSS filter for on-screen preview
-  const getCssFilter = () => {
-    const tempEffect =
-      temperature > 0
-        ? `sepia(${temperature / 100})`
-        : `hue-rotate(${temperature * 2}deg)`;
-    return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) blur(${blur}px) hue-rotate(${hue}deg) ${tempEffect}`;
-  };
-
-  // Canvas-friendly filter (uses unitless numbers where possible)
-  const getCanvasFilter = () => {
-    const tempEffect =
-      temperature > 0
-        ? `sepia(${temperature / 100})`
-        : `hue-rotate(${temperature * 2}deg)`;
-    const b = brightness / 100; // 0.5–2
-    const c = contrast / 100; // 0.5–2
-    const s = saturate / 100; // 0–2
-    return `brightness(${b}) contrast(${c}) saturate(${s}) blur(${blur}px) hue-rotate(${hue}deg) ${tempEffect}`;
-  };
-
-  // Download edited image (applies canvas filter)
+  // Download edited image (handled by Editor component now)
   const handleDownload = () => {
-    if (!image) return;
-
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-
-      ctx.filter = getCanvasFilter();
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            alert("Failed to create image blob");
-            return;
-          }
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "lunar-edit.png";
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          URL.revokeObjectURL(url);
-        },
-        "image/png",
-        1.0
-      );
-    };
-
-    img.src = image;
+    // This will be handled by the Editor component using Canvas export
   };
 
   return (
@@ -572,7 +568,7 @@ function App() {
           />
         )}
 
-        <div className="pt-24 px-8 pb-8 max-w-7xl mx-auto">
+        <div className={currentView === 'editor' ? 'mt-16 h-[calc(100vh-64px)] flex flex-col overflow-hidden' : 'pt-24 px-8 pb-8 max-w-screen-xl mx-auto'}>
           {currentView === "home" && (
             <Home
               isAuthenticated={isAuthenticated}
@@ -610,10 +606,10 @@ function App() {
           {currentView === "editor" && image && (
             <Editor
               image={image}
-              imgRef={imgRef}
               showBefore={showBefore}
               setShowBefore={setShowBefore}
               histogramData={histogramData}
+              setHistogramData={setHistogramData}
               isAuthenticated={isAuthenticated}
               handleSaveEdit={handleSaveEdit}
               handleDownload={handleDownload}
@@ -621,20 +617,14 @@ function App() {
               setImage={setImage}
               resetAdjustments={resetAdjustments}
               applyPreset={applyPreset}
-              brightness={brightness}
-              setBrightness={setBrightness}
-              contrast={contrast}
-              setContrast={setContrast}
-              saturate={saturate}
-              setSaturate={setSaturate}
-              hue={hue}
-              setHue={setHue}
-              temperature={temperature}
-              setTemperature={setTemperature}
-              blur={blur}
-              setBlur={setBlur}
-              getCssFilter={getCssFilter}
+              adjustments={adjustments}
+              setAdjustments={setAdjustments}
               albums={albums}
+              undo={undo}
+              redo={redo}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              historyLength={historyLength}
             />
           )}
         </div>

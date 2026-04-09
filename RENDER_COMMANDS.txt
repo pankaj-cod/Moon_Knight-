@@ -1,0 +1,7 @@
+# Render Deployment Configuration
+
+# Build Command
+cd moon_backend && npm install && npx prisma generate
+
+# Start Command  
+cd moon_backend && npx prisma migrate deploy && node server.js

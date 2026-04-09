@@ -12,33 +12,9 @@ const StockPhotosModal = ({
     useGSAP(
         () => {
             const tl = gsap.timeline();
-
-            tl.from(".backdrop", {
-                opacity: 0,
-                duration: 0.5,
-                ease: "power2.out",
-            })
-                .from(
-                    ".modal-content",
-                    {
-                        scale: 0.9,
-                        opacity: 0,
-                        duration: 0.5,
-                        ease: "power2.out",
-                    },
-                    "-=0.3"
-                )
-                .from(
-                    ".photo-item",
-                    {
-                        y: 20,
-                        opacity: 0,
-                        duration: 0.5,
-                        stagger: 0.1,
-                        ease: "power2.out",
-                    },
-                    "-=0.2"
-                );
+            tl.from(".spm-backdrop", { opacity: 0, duration: 0.4, ease: "power2.out" })
+              .from(".spm-panel", { y: 30, opacity: 0, scale: 0.97, duration: 0.45, ease: "power3.out" }, "-=0.2")
+              .from(".spm-photo", { y: 16, opacity: 0, duration: 0.4, stagger: 0.06, ease: "power2.out" }, "-=0.2");
         },
         { scope: container }
     );
@@ -46,55 +22,62 @@ const StockPhotosModal = ({
     return (
         <div
             ref={container}
-            className="backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/95 backdrop-blur-sm p-4"
+            className="spm-backdrop fixed inset-0 z-[9999] flex items-center justify-center p-4"
+            style={{ background: "rgba(5,5,10,0.88)", backdropFilter: "blur(12px)" }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowStockPhotos(false); }}
         >
-            <div className="modal-content bg-slate-900 border-2 border-cyan-800/40 p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center mb-6">
-                    <h2
-                        className="text-3xl font-bold tracking-widest text-cyan-50 font-display"
-                    >
-                        STOCK MOON PHOTOS
-                    </h2>
+            <div className="spm-panel bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[88vh] overflow-hidden flex flex-col shadow-2xl">
+
+                {/* Header */}
+                <div className="flex justify-between items-center px-6 py-5 border-b border-slate-800">
+                    <div>
+                        <h2 className="text-xl font-bold text-white font-display">Sample Photos</h2>
+                        <p className="text-slate-400 text-sm font-sans mt-0.5">
+                            Pick a photo to start editing
+                        </p>
+                    </div>
                     <button
                         onClick={() => setShowStockPhotos(false)}
-                        className="px-4 py-2 bg-red-950/30 hover:bg-red-950/50 border border-red-900/40 text-red-200 text-xs tracking-widest transition font-display"
+                        className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
                     >
-                        CLOSE
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M3 3l10 10M13 3L3 13" />
+                        </svg>
                     </button>
                 </div>
 
-                <p className="text-slate-400 mb-6 text-center font-sans">
-                    Select a moon photo to start editing
-                </p>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {stockPhotos.map((photo) => (
-                        <div
-                            key={photo.id}
-                            onClick={() => handleStockPhotoSelect(photo.url)}
-                            className="photo-item relative aspect-square border-2 border-cyan-800/40 overflow-hidden cursor-pointer group hover:border-cyan-400/60 transition"
-                        >
-                            <img
-                                src={photo.url}
-                                alt={photo.title}
-                                className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition">
-                                <div className="absolute bottom-0 left-0 right-0 p-4">
-                                    <p
-                                        className="text-cyan-50 text-sm font-bold tracking-wider font-display"
-                                    >
-                                        {photo.title}
-                                    </p>
+                {/* Grid */}
+                <div className="overflow-y-auto p-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {stockPhotos.map((photo) => (
+                            <button
+                                key={photo.id}
+                                onClick={() => handleStockPhotoSelect(photo.url)}
+                                className="spm-photo group relative aspect-square rounded-xl overflow-hidden border border-slate-800 hover:border-violet-500/60 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                            >
+                                <img
+                                    src={photo.url}
+                                    alt={photo.title}
+                                    crossOrigin="anonymous"
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                    onError={(e) => {
+                                        e.target.style.display = "none";
+                                        e.target.parentElement.style.background = "#1e293b";
+                                    }}
+                                />
+                                {/* Hover overlay */}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
+                                    <p className="text-white text-sm font-semibold font-display">{photo.title}</p>
+                                    <p className="text-violet-300 text-xs font-sans mt-0.5">Click to edit →</p>
                                 </div>
-                            </div>
-                        </div>
-                    ))}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
-                <p className="text-xs text-slate-500 text-center mt-6 font-sans">
-                    Photos provided by Unsplash
-                </p>
+                <div className="px-6 py-3 border-t border-slate-800">
+                    <p className="text-xs text-slate-600 text-center font-sans">AI-generated sample photos for demonstration</p>
+                </div>
             </div>
         </div>
     );
