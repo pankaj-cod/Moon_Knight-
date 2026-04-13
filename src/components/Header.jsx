@@ -49,8 +49,16 @@ const Header = ({
                     className="flex items-center gap-3 group"
                 >
                     <ApertureIcon />
-                    <span className="text-xl font-bold tracking-widest text-white font-display group-hover:text-violet-300 transition-colors duration-300">
+                    <span className="text-lg font-bold tracking-widest text-white font-display group-hover:text-violet-300 transition-colors duration-300">
                         LUMINARY
+                    </span>
+                    {/* AI pill */}
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold font-sans tracking-wider"
+                        style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.3)" }}>
+                        <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor">
+                            <path d="M5 .5 6 3.5 9 4.5 6 5.5 5 8.5 4 5.5 1 4.5 4 3.5Z"/>
+                        </svg>
+                        AI
                     </span>
                 </button>
 

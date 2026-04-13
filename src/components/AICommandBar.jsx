@@ -1,296 +1,190 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
-/**
- * AICommandBar — floating NLP command bar for the Luminary editor.
- *
- * Props:
- *   adjustments   {object}   current editor adjustments (sent as context to the LLM)
- *   onApply       {function} called with the flat AI diff { key: value }
- *   apiUrl        {string}   backend API base URL
- */
-
-const SUGGESTIONS = [
-  { label: "✦ Cinematic",   prompt: "make it cinematic with deep shadows and contrast" },
-  { label: "🎞 Film Look",  prompt: "add a warm film look with grain and vignette" },
-  { label: "🌙 Moody",      prompt: "make it dark and moody with cool tones" },
-  { label: "🌅 Golden Hour",prompt: "golden hour warm tones with lifted shadows" },
-  { label: "⬛ Noir",       prompt: "dramatic black and white noir style" },
-  { label: "🌫 Airy",       prompt: "bright and airy soft look" },
+const PLACEHOLDERS = [
+  "Make this cinematic...",
+  "Warm tones with soft highlights...",
+  "Moody film look with high contrast...",
+  "Dramatic noir with deep shadows...",
+  "Golden hour vibes with lifted shadows...",
+  "Airy and bright lifestyle look...",
 ];
 
-const AICommandBar = ({ adjustments, onApply, apiUrl }) => {
-  const [isOpen, setIsOpen]         = useState(false);
-  const [prompt, setPrompt]         = useState("");
-  const [loading, setLoading]       = useState(false);
-  const [status, setStatus]         = useState(null); // { type: 'success'|'error', message }
-  const [showSuggestions, setShowSuggestions] = useState(false);
+const CHIPS = [
+  { label: "Cinematic",    prompt: "make it cinematic with deep shadows and strong contrast" },
+  { label: "Film",         prompt: "warm film look with grain and vignette" },
+  { label: "Moody",        prompt: "dark and moody with cool tones and vignette" },
+  { label: "Golden Hour",  prompt: "golden hour with warm tones and lifted shadows" },
+  { label: "Noir",         prompt: "dramatic black and white noir" },
+  { label: "Airy",         prompt: "bright airy soft look with open shadows" },
+  { label: "Vivid",        prompt: "vibrant punchy colors with high clarity" },
+  { label: "Vintage",      prompt: "faded vintage look with grain and warm tones" },
+];
 
-  const inputRef      = useRef(null);
-  const barRef        = useRef(null);
-  const dismissTimer  = useRef(null);
+const AICommandBar = forwardRef(({ adjustments, onApply, apiUrl }, ref) => {
+  const [prompt, setPrompt]       = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [status, setStatus]       = useState(null);
+  const [phIdx, setPhIdx]         = useState(0);
+  const [focused, setFocused]     = useState(false);
+  const inputRef    = useRef(null);
+  const dismissRef  = useRef(null);
 
-  // Auto-focus input when bar opens
+  // Cycle placeholder text
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 80);
-      setShowSuggestions(true);
-    } else {
-      setShowSuggestions(false);
-      setStatus(null);
-      setPrompt("");
-    }
-  }, [isOpen]);
-
-  // Auto-dismiss status toasts
-  useEffect(() => {
-    if (status) {
-      clearTimeout(dismissTimer.current);
-      dismissTimer.current = setTimeout(() => setStatus(null), 4000);
-    }
-    return () => clearTimeout(dismissTimer.current);
-  }, [status]);
-
-  // Close on Escape
-  useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") setIsOpen(false); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    const t = setInterval(() => setPhIdx(i => (i + 1) % PLACEHOLDERS.length), 3500);
+    return () => clearInterval(t);
   }, []);
 
-  const runPrompt = useCallback(async (text) => {
-    const cleaned = text.trim();
-    if (!cleaned) return;
+  // Auto-dismiss status
+  useEffect(() => {
+    if (!status) return;
+    clearTimeout(dismissRef.current);
+    dismissRef.current = setTimeout(() => setStatus(null), 3500);
+    return () => clearTimeout(dismissRef.current);
+  }, [status]);
 
+  const runPrompt = useCallback(async (text) => {
+    const t = text.trim();
+    if (!t || loading) return;
     setLoading(true);
     setStatus(null);
-    setShowSuggestions(false);
-
     try {
-      const res = await fetch(`${apiUrl}/ai-edit`, {
+      const res  = await fetch(`${apiUrl}/ai-edit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: cleaned,
-          currentAdjustments: adjustments,
-        }),
+        body: JSON.stringify({ prompt: t, currentAdjustments: adjustments }),
       });
-
       const data = await res.json();
-
-      if (!res.ok) {
-        setStatus({ type: "error", message: data.error || "Something went wrong." });
-        return;
-      }
-
+      if (!res.ok) { setStatus({ ok: false, msg: data.error || "Something went wrong" }); return; }
       if (data.adjustments && Object.keys(data.adjustments).length > 0) {
-        onApply(data.adjustments);
-        const count = Object.keys(data.adjustments).length;
-        setStatus({
-          type: "success",
-          message: `Applied ${count} adjustment${count !== 1 ? "s" : ""} ✓`,
-        });
+        onApply(data.adjustments, t);
+        setStatus({ ok: true, msg: `✓  ${Object.keys(data.adjustments).length} adjustments applied` });
         setPrompt("");
       } else {
-        setStatus({ type: "error", message: "No adjustments matched your command." });
+        setStatus({ ok: false, msg: "No adjustments matched — try a different command" });
       }
     } catch {
-      setStatus({ type: "error", message: "Could not reach AI service. Check your connection." });
+      setStatus({ ok: false, msg: "Cannot reach AI service — check connection" });
     } finally {
       setLoading(false);
     }
-  }, [adjustments, apiUrl, onApply]);
+  }, [adjustments, apiUrl, onApply, loading]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    runPrompt(prompt);
-  };
-
-  const handleSuggestionClick = (s) => {
-    setPrompt(s.prompt);
-    runPrompt(s.prompt);
-  };
+  // Expose runPrompt to parent via ref (for sidebar suggestion clicks)
+  useImperativeHandle(ref, () => ({ runPrompt }), [runPrompt]);
 
   return (
     <div
-      ref={barRef}
-      className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2"
-      style={{ width: isOpen ? "min(680px, calc(100% - 32px))" : "auto" }}
+      className="shrink-0 px-5 pt-3 pb-2.5 border-b"
+      style={{ borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.015)" }}
     >
-      {/* ── Suggestion chips (visible when open + not loading) ── */}
-      {isOpen && !loading && !status && (
-        <div
-          className="flex flex-wrap justify-center gap-1.5 w-full animate-fadeIn"
-          style={{ animation: "fadeUp 0.2s ease-out" }}
+      {/* Input row */}
+      <form onSubmit={e => { e.preventDefault(); runPrompt(prompt); }}>
+        <motion.div
+          animate={{ boxShadow: focused ? "0 0 0 1.5px rgba(139,92,246,0.55), 0 0 28px rgba(139,92,246,0.12)" : "0 0 0 1px rgba(255,255,255,0.08)" }}
+          transition={{ duration: 0.2 }}
+          className="flex items-center rounded-2xl overflow-hidden"
+          style={{ background: "rgba(255,255,255,0.04)" }}
         >
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s.label}
-              onClick={() => handleSuggestionClick(s)}
-              className="px-2.5 py-1 text-[11px] font-sans rounded-full border border-violet-500/30 bg-violet-900/20 text-violet-300 hover:bg-violet-800/40 hover:border-violet-400/60 transition-all duration-150 backdrop-blur-md whitespace-nowrap"
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── Status toast ── */}
-      {status && (
-        <div
-          className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-sans font-medium backdrop-blur-md border shadow-lg transition-all duration-300 ${
-            status.type === "success"
-              ? "bg-emerald-900/70 border-emerald-500/40 text-emerald-300"
-              : "bg-red-900/70 border-red-500/40 text-red-300"
-          }`}
-          style={{ animation: "fadeUp 0.2s ease-out" }}
-        >
-          <span>{status.type === "success" ? "✓" : "✕"}</span>
-          <span>{status.message}</span>
-          <button
-            onClick={() => setStatus(null)}
-            className="ml-1 opacity-60 hover:opacity-100 transition"
-          >×</button>
-        </div>
-      )}
-
-      {/* ── Main bar ── */}
-      <div
-        className="relative w-full"
-        style={{
-          filter: "drop-shadow(0 8px 32px rgba(139, 92, 246, 0.25))",
-        }}
-      >
-        {isOpen ? (
-          /* Expanded command input */
-          <form
-            onSubmit={handleSubmit}
-            className="flex items-center gap-2 w-full rounded-2xl border px-4 py-3 backdrop-blur-xl"
-            style={{
-              background: "rgba(15, 10, 30, 0.85)",
-              borderColor: loading
-                ? "rgba(139, 92, 246, 0.6)"
-                : "rgba(139, 92, 246, 0.35)",
-              boxShadow: "0 0 0 1px rgba(139,92,246,0.1), inset 0 1px 0 rgba(255,255,255,0.05)",
-              animation: "expandBar 0.2s cubic-bezier(0.16,1,0.3,1)",
-            }}
-          >
-            {/* Sparkle icon */}
-            <span
-              className="shrink-0 text-violet-400"
-              style={{
-                animation: loading ? "spinPulse 1s linear infinite" : "none",
-              }}
-            >
-              {loading ? (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="animate-spin">
-                  <circle cx="8" cy="8" r="6" stroke="rgb(167,139,250)" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round"/>
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 1l1.5 4.5L14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5Z"/>
-                </svg>
-              )}
-            </span>
-
-            <input
-              ref={inputRef}
-              type="text"
-              value={prompt}
-              onChange={(e) => {
-                setPrompt(e.target.value);
-                setShowSuggestions(e.target.value.length === 0);
-              }}
-              onFocus={() => setShowSuggestions(prompt.length === 0)}
-              placeholder={loading ? "AI is thinking…" : "Describe how to edit this photo…"}
-              disabled={loading}
-              className="flex-1 bg-transparent text-sm text-slate-100 placeholder-slate-500 outline-none font-sans min-w-0"
-              autoComplete="off"
-            />
-
-            {/* Loading dots */}
-            {loading && (
-              <div className="flex gap-1 shrink-0">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="w-1.5 h-1.5 rounded-full bg-violet-400"
-                    style={{ animation: `bounce 1s ${i * 0.15}s infinite` }}
-                  />
-                ))}
-              </div>
+          {/* Sparkle / spinner icon */}
+          <div className="pl-4 pr-3 shrink-0 text-violet-400">
+            {loading ? (
+              <motion.svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                <circle cx="8" cy="8" r="6" stroke="rgb(167,139,250)" strokeWidth="2"
+                  strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round"/>
+              </motion.svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 1 9.5 5.5 14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5Z"/>
+              </svg>
             )}
+          </div>
 
-            {/* Submit / Close */}
-            {!loading && (
-              <div className="flex items-center gap-1.5 shrink-0">
-                {prompt.trim() && (
-                  <button
-                    type="submit"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold font-sans transition-all duration-150 shadow-md shadow-violet-600/30"
-                  >
-                    <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
-                      <path d="M1.5 6h9M7 2.5l3.5 3.5L7 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                    </svg>
-                    Apply
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                    <path d="M2 2l8 8M10 2l-8 8"/>
-                  </svg>
-                </button>
-              </div>
+          {/* Input */}
+          <input
+            ref={inputRef}
+            type="text"
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            placeholder={loading ? "AI is processing…" : PLACEHOLDERS[phIdx]}
+            disabled={loading}
+            autoComplete="off"
+            className="flex-1 bg-transparent py-3.5 text-sm text-slate-100 placeholder-slate-600 outline-none font-sans"
+          />
+
+          {/* Inline status */}
+          <AnimatePresence mode="wait">
+            {status && (
+              <motion.span
+                key={status.msg}
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0 }}
+                className={`text-xs font-sans pr-3 shrink-0 ${status.ok ? "text-emerald-400" : "text-red-400"}`}
+              >
+                {status.msg}
+              </motion.span>
             )}
-          </form>
-        ) : (
-          /* Collapsed pill trigger */
-          <button
-            onClick={() => setIsOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-sans font-semibold transition-all duration-200 group"
-            style={{
-              background: "rgba(15,10,30,0.80)",
-              border: "1px solid rgba(139,92,246,0.45)",
-              color: "rgb(196,181,253)",
-              boxShadow: "0 0 20px rgba(139,92,246,0.15), inset 0 1px 0 rgba(255,255,255,0.06)",
-            }}
-            title="AI-powered photo editing"
+          </AnimatePresence>
+
+          {/* Loading dots */}
+          {loading && (
+            <div className="flex gap-1 pr-4 shrink-0">
+              {[0,1,2].map(i => (
+                <motion.span key={i} className="w-1.5 h-1.5 rounded-full bg-violet-400 block"
+                  animate={{ y: [0,-4,0] }} transition={{ repeat: Infinity, duration: 0.75, delay: i*0.15 }}/>
+              ))}
+            </div>
+          )}
+
+          {/* Submit */}
+          {!loading && (
+            <div className="pr-2 shrink-0">
+              <motion.button type="submit" disabled={!prompt.trim()}
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold font-sans transition-all ${
+                  prompt.trim()
+                    ? "bg-violet-600 hover:bg-violet-500 text-white shadow-lg shadow-violet-600/25"
+                    : "bg-white/5 text-slate-700 cursor-not-allowed"
+                }`}
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"
+                  stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M2 6h8M7 2.5L10.5 6 7 9.5"/>
+                </svg>
+                Apply
+              </motion.button>
+            </div>
+          )}
+        </motion.div>
+      </form>
+
+      {/* Suggestion chips */}
+      <div className="flex items-center gap-2 mt-2 flex-wrap">
+        <span className="text-[10px] text-slate-700 font-sans uppercase tracking-wider shrink-0">Try:</span>
+        {CHIPS.map(c => (
+          <motion.button
+            key={c.label}
+            onClick={() => runPrompt(c.prompt)}
+            disabled={loading}
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.95 }}
+            className="px-2.5 py-0.5 text-[11px] font-sans rounded-full border transition-all duration-150 disabled:opacity-40"
+            style={{ borderColor: "rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)", color: "#94a3b8" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(139,92,246,0.45)"; e.currentTarget.style.color = "#c4b5fd"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.09)"; e.currentTarget.style.color = "#94a3b8"; }}
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 14 14"
-              fill="currentColor"
-              className="group-hover:scale-110 transition-transform duration-150"
-            >
-              <path d="M7 0.5l1.4 4.1L12.5 6l-4.1 1.4L7 11.5l-1.4-4.1L1.5 6l4.1-1.4Z"/>
-            </svg>
-            <span>AI Edit</span>
-            <kbd className="ml-0.5 text-[10px] text-violet-400/60 font-mono hidden sm:block">⌘K</kbd>
-          </button>
-        )}
+            {c.label}
+          </motion.button>
+        ))}
       </div>
-
-      {/* Inline keyframe styles */}
-      <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateX(-50%) translateY(6px); }
-          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-        @keyframes expandBar {
-          from { opacity: 0; transform: scaleX(0.92) scaleY(0.88); }
-          to   { opacity: 1; transform: scaleX(1)    scaleY(1);    }
-        }
-        @keyframes bounce {
-          0%, 100% { transform: translateY(0); opacity: 0.5; }
-          50%       { transform: translateY(-4px); opacity: 1; }
-        }
-      `}</style>
     </div>
   );
-};
+});
 
+AICommandBar.displayName = "AICommandBar";
 export default AICommandBar;
