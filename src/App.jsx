@@ -625,6 +625,7 @@ function App() {
               canUndo={canUndo}
               canRedo={canRedo}
               historyLength={historyLength}
+              apiUrl={API_URL}
             />
           )}
         </div>

@@ -1,12 +1,14 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import Slider from "../components/Slider";
 import Histogram from "../components/Histogram";
 import ToneCurveEditor from "../components/ToneCurveEditor";
 import HSLPanel from "../components/HSLPanel";
+import AICommandBar from "../components/AICommandBar";
 import { useCanvasEditor } from "../hooks/useCanvasEditor";
 import { ToneCurve } from "../utils/ToneCurve";
+import { mergeAIEdit } from "../utils/mergeAIEdit";
 
 const Editor = ({
     image,
@@ -29,11 +31,13 @@ const Editor = ({
     canUndo = false,
     canRedo = false,
     historyLength = 0,
+    apiUrl = "http://localhost:5001/api",
 }) => {
     const container = useRef();
     const [selectedAlbum, setSelectedAlbum] = useState("");
     const [activeTab, setActiveTab] = useState("light");
     const [showHistogram, setShowHistogram] = useState(false);
+    const [showAIBar, setShowAIBar] = useState(false);
 
     const { canvasRef, applyAdjustments, exportBlob, renderOriginal, getHistogramData } = useCanvasEditor(image);
 
@@ -51,7 +55,7 @@ const Editor = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [adjustments]);
 
-    // ── Keyboard shortcuts: Cmd+Z = undo, Cmd+Shift+Z / Ctrl+Y = redo ──
+    // ── Keyboard shortcuts ──
     useEffect(() => {
         const handleKeyDown = (e) => {
             const isMac = navigator.platform.toUpperCase().includes("MAC");
@@ -64,6 +68,10 @@ const Editor = ({
             } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
                 e.preventDefault();
                 if (canRedo) redo();
+            } else if (e.key === "k") {
+                // Cmd+K / Ctrl+K: toggle AI command bar
+                e.preventDefault();
+                setShowAIBar((v) => !v);
             }
         };
         window.addEventListener("keydown", handleKeyDown);
@@ -89,6 +97,11 @@ const Editor = ({
     const updateBlur = (value) => {
         setAdjustments(prev => ({ ...prev, blur: value }));
     };
+
+    /** Called by AICommandBar with the flat AI diff { key: value } */
+    const handleAIApply = useCallback((flatDiff) => {
+        setAdjustments(prev => mergeAIEdit(prev, flatDiff));
+    }, [setAdjustments]);
 
     const handleDownloadClick = async () => {
         try {
@@ -213,6 +226,22 @@ const Editor = ({
                             Histogram
                         </button>
 
+                        {/* AI Edit toggle */}
+                        <button
+                            onClick={() => setShowAIBar((v) => !v)}
+                            title="AI-powered editing (⌘K)"
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border transition font-sans ${
+                                showAIBar
+                                    ? "border-violet-500/60 text-violet-300 bg-violet-900/20"
+                                    : "border-slate-700 text-slate-400 hover:text-white hover:border-slate-600"
+                            }`}
+                        >
+                            <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
+                                <path d="M6 1l1.1 3.3L10.5 5.5 7.1 6.6 6 10l-1.1-3.4L1.5 5.5l3.4-1.2Z"/>
+                            </svg>
+                            AI Edit
+                        </button>
+
                         <div className="h-4 w-px bg-slate-700" />
 
                         {/* Export */}
@@ -250,6 +279,15 @@ const Editor = ({
                         className="relative max-w-full max-h-full object-contain rounded-lg shadow-[0_0_80px_rgba(0,0,0,0.8)]"
                         style={{ display: "block" }}
                     />
+
+                    {/* ── AI Command Bar ── */}
+                    {showAIBar && (
+                        <AICommandBar
+                            adjustments={adjustments}
+                            onApply={handleAIApply}
+                            apiUrl={apiUrl}
+                        />
+                    )}
                 </div>
 
                 {/* Histogram (toggleable strip) */}
