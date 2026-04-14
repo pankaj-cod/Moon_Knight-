@@ -13,6 +13,7 @@ import AIHistoryPanel from "../components/AIHistoryPanel";
 import { useCanvasEditor } from "../hooks/useCanvasEditor";
 import { ToneCurve }       from "../utils/ToneCurve";
 import { mergeAIEdit }     from "../utils/mergeAIEdit";
+import { analyzeImage }    from "../utils/imageAnalysis";
 
 // ── Slider that flashes a violet highlight when AI changes it ──
 const SmartSlider = ({ highlight, ...props }) => (
@@ -53,6 +54,8 @@ export default function Editor({
   const [selectedAlbum, setSelectedAlbum] = useState("");
   const [aiHistory,     setAiHistory]     = useState([]);
   const [highlightKeys, setHighlightKeys] = useState(new Set());
+  const [enhancing,     setEnhancing]     = useState(false);
+  const [enhanceResult, setEnhanceResult] = useState(null); // { qualityScore, explanation }
 
   const { canvasRef, applyAdjustments, exportBlob, renderOriginal, getHistogramData } =
     useCanvasEditor(image);
@@ -113,6 +116,51 @@ export default function Editor({
     aiBarRef.current?.runPrompt(prompt);
   }, []);
 
+  // ── Auto-Enhance: analyze canvas → send to backend → apply corrections ──
+  const handleAutoEnhance = useCallback(async () => {
+    if (enhancing || !canvasRef.current) return;
+    setEnhancing(true);
+    setEnhanceResult(null);
+    try {
+      const analysis = analyzeImage(canvasRef.current);
+      if (!analysis) { setEnhancing(false); return; }
+
+      const res = await fetch(`${apiUrl}/auto-enhance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysis }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setEnhanceResult({ qualityScore: analysis.scores.overall, explanation: data.error || "Failed" });
+        return;
+      }
+
+      if (data.adjustments && Object.keys(data.adjustments).length > 0) {
+        setAdjustments(prev => mergeAIEdit(prev, data.adjustments));
+        setAiHistory(prev => [{
+          id: Date.now(), prompt: "✦ Auto Enhance",
+          adjustments: data.adjustments, timestamp: new Date(),
+        }, ...prev].slice(0, 25));
+        const keys = new Set(Object.keys(data.adjustments));
+        setHighlightKeys(keys);
+        setTimeout(() => setHighlightKeys(new Set()), 1600);
+      }
+
+      setEnhanceResult({
+        qualityScore: data.qualityScore,
+        explanation: data.explanation,
+      });
+      // Auto-dismiss after 6s
+      setTimeout(() => setEnhanceResult(null), 6000);
+    } catch {
+      setEnhanceResult({ qualityScore: 0, explanation: "Could not reach AI service" });
+    } finally {
+      setEnhancing(false);
+    }
+  }, [enhancing, apiUrl, setAdjustments, canvasRef]);
+
   // ── Export ──
   const handleExport = useCallback(async () => {
     try {
@@ -159,20 +207,30 @@ export default function Editor({
 
         {/* Right: Controls */}
         <div className="flex items-center gap-1.5">
-          {/* Undo/Redo */}
-          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: panelBorder }}>
-            {[
-              { fn: undo, can: canUndo, title: "⌘Z",  path: "M2 6a4 4 0 1 0 4-4H2M2 2v4h4" },
-              { fn: redo, can: canRedo, title: "⌘⇧Z", path: "M10 6a4 4 0 1 1-4-4h4M10 2v4H6" },
-            ].map((b, i) => (
-              <button key={i} onClick={b.fn} disabled={!b.can} title={b.title}
-                className={`px-2.5 py-1.5 text-xs font-sans transition ${i === 0 ? "border-r" : ""} ${b.can ? "text-slate-300 hover:bg-white/5" : "text-slate-700 cursor-not-allowed"}`}
-                style={i === 0 ? { borderColor: panelBorder } : {}}>
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d={b.path}/>
-                </svg>
-              </button>
-            ))}
+          {/* Undo / Redo */}
+          <div className="flex items-center gap-1">
+            <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)"
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border font-sans transition-all ${
+                canUndo
+                  ? "text-slate-300 hover:bg-white/5 border-white/8"
+                  : "text-slate-700 cursor-not-allowed border-white/4"
+              }`}>
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 6a4 4 0 1 0 4-4H2M2 2v4h4"/>
+              </svg>
+              Undo
+            </button>
+            <button onClick={redo} disabled={!canRedo} title="Redo (⌘⇧Z)"
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border font-sans transition-all ${
+                canRedo
+                  ? "text-slate-300 hover:bg-white/5 border-white/8"
+                  : "text-slate-700 cursor-not-allowed border-white/4"
+              }`}>
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 6a4 4 0 1 1-4-4h4M10 2v4H6"/>
+              </svg>
+              Redo
+            </button>
           </div>
 
           {historyLength > 0 && <span className="text-[10px] text-slate-700 font-mono hidden sm:block">{historyLength}s</span>}
@@ -199,6 +257,32 @@ export default function Editor({
             className={`px-2.5 py-1.5 text-xs rounded-lg border font-sans transition ${showControls ? "text-violet-300 border-violet-500/40 bg-violet-900/15" : "text-slate-500 hover:text-slate-300 border-white/8 bg-white/2"}`}>
             Controls
           </button>
+
+          {/* Auto Enhance */}
+          <motion.button
+            onClick={handleAutoEnhance}
+            disabled={enhancing}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border font-sans font-semibold transition-all ${
+              enhancing
+                ? "text-violet-300 border-violet-500/50 bg-violet-900/20"
+                : "text-amber-300 border-amber-500/40 bg-amber-900/10 hover:bg-amber-900/20"
+            }`}
+          >
+            {enhancing ? (
+              <motion.svg width="11" height="11" viewBox="0 0 16 16" fill="none"
+                animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}>
+                <circle cx="8" cy="8" r="6" stroke="rgb(167,139,250)" strokeWidth="2"
+                  strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round"/>
+              </motion.svg>
+            ) : (
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor">
+                <path d="M7 0.5 8.4 4.6 12.5 5.5 8.4 6.4 7 10.5 5.6 6.4 1.5 5.5 5.6 4.6Z"/>
+              </svg>
+            )}
+            {enhancing ? "Analyzing..." : "Auto Enhance"}
+          </motion.button>
 
           <div className="w-px h-4 bg-white/8"/>
 
@@ -241,6 +325,62 @@ export default function Editor({
               className="relative max-w-full max-h-full object-contain rounded-xl"
               style={{ display: "block", boxShadow: "0 0 80px rgba(0,0,0,0.9), 0 0 160px rgba(0,0,0,0.5)" }}
             />
+
+            {/* ── Quality Score Overlay (after Auto Enhance) ── */}
+            <AnimatePresence>
+              {enhanceResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-3 rounded-2xl border max-w-lg"
+                  style={{
+                    background: "rgba(10,8,20,0.92)",
+                    borderColor: "rgba(255,255,255,0.1)",
+                    backdropFilter: "blur(16px)",
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  {/* Score circle */}
+                  <div className="shrink-0 relative w-11 h-11">
+                    <svg viewBox="0 0 44 44" className="w-11 h-11 -rotate-90">
+                      <circle cx="22" cy="22" r="18" fill="none" strokeWidth="3"
+                        stroke="rgba(255,255,255,0.08)"/>
+                      <motion.circle cx="22" cy="22" r="18" fill="none" strokeWidth="3"
+                        strokeLinecap="round"
+                        stroke={enhanceResult.qualityScore >= 75 ? "#34d399" : enhanceResult.qualityScore >= 50 ? "#fbbf24" : "#f87171"}
+                        strokeDasharray={`${2 * Math.PI * 18}`}
+                        initial={{ strokeDashoffset: 2 * Math.PI * 18 }}
+                        animate={{ strokeDashoffset: 2 * Math.PI * 18 * (1 - enhanceResult.qualityScore / 100) }}
+                        transition={{ duration: 1.2, ease: "easeOut" }}
+                      />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold font-sans text-white">
+                      {enhanceResult.qualityScore}
+                    </span>
+                  </div>
+
+                  {/* Explanation */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-slate-500 font-sans uppercase tracking-wider mb-0.5">
+                      Image Quality Score
+                    </p>
+                    <p className="text-xs text-slate-300 font-sans leading-relaxed line-clamp-2">
+                      {enhanceResult.explanation}
+                    </p>
+                  </div>
+
+                  {/* Dismiss */}
+                  <button onClick={() => setEnhanceResult(null)}
+                    className="shrink-0 p-1 rounded-lg text-slate-600 hover:text-slate-300 transition">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                      stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <path d="M1 1l8 8M9 1l-8 8"/>
+                    </svg>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           {showHistogram && (
             <div className="border-t shrink-0 px-4 py-3" style={{ borderColor: panelBorder, background: panelBg }}>
