@@ -14,7 +14,7 @@ const SECRET_KEY = process.env.JWT_SECRET || 'change-this-secret';
 // Middleware
 app.use(cors({
   origin: [
-    'https://moon-knight-jet.vercel.app',
+    'https://moon-knight-git-main-pankaj-cods-projects.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000',
   ],
