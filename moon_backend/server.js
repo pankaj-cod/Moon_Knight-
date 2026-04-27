@@ -13,7 +13,11 @@ const SECRET_KEY = process.env.JWT_SECRET || 'change-this-secret';
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || ['http://localhost:5173', 'http://localhost:3000'],
+  origin: [
+    'https://moon-knight-jet.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+  ],
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
