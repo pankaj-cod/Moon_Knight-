@@ -1,8 +1,3 @@
-const express = require('express');
-const router = express.Router();
-
-// ==================== AI EDIT ROUTE ====================
-
 // Validation schema: maps flat key → { category, min, max }
 const ADJUSTMENT_SCHEMA = {
   exposure:    { category: 'basic',   min: -2,   max: 2   },
@@ -204,90 +199,6 @@ Output: {"exposure": -0.05, "shadows": -5}
 Input: "I want it to look dreamy but with warm tones"
 Output: {"exposure": 0.2, "clarity": -15, "saturation": -10, "vignette": 5, "dehaze": -10, "temperature": 20, "vibrance": 10}`;
 
-router.post('/ai-edit', async (req, res) => {
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
-  if (!GROQ_API_KEY || GROQ_API_KEY === 'your_groq_api_key_here') {
-    return res.status(503).json({ error: 'AI editing is not configured. Add GROQ_API_KEY to your .env file.' });
-  }
-
-  const { prompt, currentAdjustments } = req.body;
-
-  if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
-    return res.status(400).json({ error: 'Prompt is required' });
-  }
-  if (prompt.trim().length > 500) {
-    return res.status(400).json({ error: 'Prompt must be under 500 characters' });
-  }
-
-  // Build a flat current-state string for context
-  const flat = flattenAdjustments(currentAdjustments);
-  const nonZero = Object.entries(flat).filter(([, v]) => v !== 0);
-  const currentContext = nonZero.length > 0
-    ? `\n\nCurrent adjustment values: ${JSON.stringify(Object.fromEntries(nonZero))}`
-    : '';
-
-  const userMessage = prompt.trim() + currentContext;
-
-  try {
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: AI_SYSTEM_PROMPT },
-          { role: 'user',   content: userMessage },
-        ],
-        temperature: 0.25,
-        max_tokens: 300,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!groqRes.ok) {
-      const errText = await groqRes.text();
-      console.error('Groq API error:', groqRes.status, errText);
-      return res.status(502).json({ error: 'AI service returned an error. Please try again.' });
-    }
-
-    const groqData = await groqRes.json();
-    const rawContent = groqData.choices?.[0]?.message?.content?.trim();
-
-    if (!rawContent) {
-      return res.status(502).json({ error: 'Empty response from AI service.' });
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(rawContent);
-    } catch {
-      console.error('Failed to parse AI JSON:', rawContent);
-      return res.status(502).json({ error: 'AI returned malformed JSON. Please rephrase your command.' });
-    }
-
-    // Sanitize: strip unknown keys, clamp ranges, enforce numbers
-    const sanitized = sanitizeAIOutput(parsed);
-
-    if (Object.keys(sanitized).length === 0) {
-      return res.status(422).json({
-        error: 'Could not extract valid adjustments. Try a more specific command like "make it warmer" or "add cinematic contrast".',
-      });
-    }
-
-    console.log(`[AI Edit] prompt="${prompt.trim()}" → adjustments:`, sanitized);
-    res.json({ adjustments: sanitized, prompt: prompt.trim() });
-
-  } catch (error) {
-    console.error('AI edit route error:', error);
-    res.status(500).json({ error: 'Server error while processing your command.' });
-  }
-});
-
-// ==================== AUTO-ENHANCE ROUTE ====================
-
 const AUTO_ENHANCE_PROMPT = `You are **Luminary AI**, an expert photo analysis and correction engine. You receive structured image analysis data and must return corrective adjustments to optimize the image quality.
 
 AVAILABLE CONTROLS & RANGES (same as the editor):
@@ -362,89 +273,43 @@ Output: {"adjustments":{"exposure":0.45,"contrast":20,"shadows":25,"highlights":
 Input analysis: meanLuminance=135, stdDev=52, dynamicRange=190, no issues
 Output: {"adjustments":{"clarity":8,"vibrance":5},"qualityScore":88,"explanation":"Your image looks great — well-exposed with good dynamic range. I've added a subtle clarity and vibrance boost to bring out a bit more detail."}`;
 
-router.post('/auto-enhance', async (req, res) => {
+async function callGroqAPI(systemPrompt, userMessage, maxTokens = 300) {
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
   if (!GROQ_API_KEY || GROQ_API_KEY === 'your_groq_api_key_here') {
-    return res.status(503).json({ error: 'AI editing is not configured.' });
+    throw new Error('AI_NOT_CONFIGURED');
   }
 
-  const { analysis } = req.body;
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userMessage },
+      ],
+      temperature: 0.25,
+      max_tokens: maxTokens,
+      response_format: { type: 'json_object' },
+    }),
+  });
 
-  if (!analysis || !analysis.scores || !analysis.luminance) {
-    return res.status(400).json({ error: 'Image analysis data is required' });
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error('Groq API error:', response.status, errText);
+    throw new Error('API_ERROR');
   }
 
-  // Build a concise analysis summary for the LLM
-  const summary = [
-    `Image Analysis Report:`,
-    `Luminance: mean=${analysis.luminance.mean}, stdDev=${analysis.luminance.stdDev}, min=${analysis.luminance.min}, max=${analysis.luminance.max}`,
-    `Percentiles: p5=${analysis.luminance.p5}, p95=${analysis.luminance.p95}, dynamicRange=${analysis.luminance.dynamicRange}`,
-    `Histogram skewness: ${analysis.luminance.skewness}`,
-    `Color: R=${analysis.color.meanR}, G=${analysis.color.meanG}, B=${analysis.color.meanB}`,
-    `Color cast: red=${analysis.color.cast.red}%, green=${analysis.color.cast.green}%, blue=${analysis.color.cast.blue}%`,
-    `Mean saturation: ${analysis.color.meanSaturation}`,
-    `Clipping: shadows=${analysis.clipping.shadowPercent}%, highlights=${analysis.clipping.highlightPercent}%`,
-    `Quality scores: exposure=${analysis.scores.exposure}, contrast=${analysis.scores.contrast}, color=${analysis.scores.color}, overall=${analysis.scores.overall}`,
-    `Issues detected: ${analysis.issues.length > 0 ? analysis.issues.join(', ') : 'none'}`,
-  ].join('\n');
+  return response.json();
+}
 
-  try {
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: AUTO_ENHANCE_PROMPT },
-          { role: 'user',   content: summary },
-        ],
-        temperature: 0.2,
-        max_tokens: 400,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!groqRes.ok) {
-      const errText = await groqRes.text();
-      console.error('Groq API error (auto-enhance):', groqRes.status, errText);
-      return res.status(502).json({ error: 'AI service returned an error.' });
-    }
-
-    const groqData = await groqRes.json();
-    const rawContent = groqData.choices?.[0]?.message?.content?.trim();
-
-    if (!rawContent) {
-      return res.status(502).json({ error: 'Empty response from AI.' });
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(rawContent);
-    } catch {
-      console.error('Auto-enhance JSON parse fail:', rawContent);
-      return res.status(502).json({ error: 'AI returned malformed response.' });
-    }
-
-    // Validate and sanitize adjustments
-    const sanitized = sanitizeAIOutput(parsed.adjustments || {});
-    const qualityScore = Math.max(0, Math.min(100, Math.round(Number(parsed.qualityScore) || analysis.scores.overall)));
-    const explanation = typeof parsed.explanation === 'string' ? parsed.explanation.slice(0, 500) : 'Auto-enhance applied.';
-
-    console.log(`[Auto-Enhance] score=${qualityScore} → adjustments:`, sanitized);
-    res.json({
-      adjustments: sanitized,
-      qualityScore,
-      explanation,
-      analysis: analysis.scores,
-    });
-
-  } catch (error) {
-    console.error('Auto-enhance error:', error);
-    res.status(500).json({ error: 'Server error during auto-enhance.' });
-  }
-});
-
-module.exports = router;
+module.exports = {
+  sanitizeAIOutput,
+  flattenAdjustments,
+  AI_SYSTEM_PROMPT,
+  AUTO_ENHANCE_PROMPT,
+  callGroqAPI
+};
